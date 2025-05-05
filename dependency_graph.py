@@ -1,61 +1,75 @@
 import ast
 import os
 import argparse
-import networkx as nx
 import matplotlib.pyplot as plt
+import networkx as nx
 import sys
 
-# Hardcoded stdlib modules (simplified)
 STANDARD_LIBS = set(sys.builtin_module_names) | {
     'os', 'sys', 'math', 're', 'json', 'time', 'typing', 'pathlib', 'itertools',
     'functools', 'subprocess', 'datetime', 'collections', 'threading', 'argparse',
     'logging', 'copy', 'enum', 'heapq', 'shutil', 'inspect', 'traceback', 'types'
 }
 
-def parse_imports(path):
-    imports = {}
-    for root, _, files in os.walk(path):
-        for filename in files:
-            if filename.endswith('.py'):
-                module = os.path.splitext(filename)[0]
-                with open(os.path.join(root, filename), 'r', encoding='utf-8') as f:
-                    try:
-                        tree = ast.parse(f.read(), filename=filename)
-                        names = {n.name.split('.')[0] for n in ast.walk(tree) if isinstance(n, ast.Import)}
-                        froms = {n.module.split('.')[0] for n in ast.walk(tree)
-                                 if isinstance(n, ast.ImportFrom) and n.module}
-                        all_imports = names | froms
-                        filtered = [imp for imp in all_imports if imp and imp not in STANDARD_LIBS]
-                        imports[module] = filtered
-                    except SyntaxError:
-                        continue
+def is_std_or_local(module):
+    return (
+        not module or
+        module.startswith('.') or
+        module in STANDARD_LIBS
+    )
+
+def get_external_imports_from_file(filepath):
+    with open(filepath, "r", encoding="utf-8") as f:
+        try:
+            tree = ast.parse(f.read())
+        except SyntaxError:
+            return set()
+    imports = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                mod = alias.name.split('.')[0]
+                if not is_std_or_local(mod):
+                    imports.add(mod)
+        elif isinstance(node, ast.ImportFrom):
+            if node.module:
+                mod = node.module.split('.')[0]
+                if not is_std_or_local(mod):
+                    imports.add(mod)
     return imports
 
-def build_graph(imports):
-    G = nx.DiGraph()
-    for mod, deps in imports.items():
-        for dep in deps:
-            G.add_edge(mod, dep)
-    return G
+def collect_imports(path):
+    all_imports = set()
+    for root, _, files in os.walk(path):
+        for file in files:
+            if file.endswith(".py"):
+                full_path = os.path.join(root, file)
+                all_imports |= get_external_imports_from_file(full_path)
+    return all_imports
 
-def plot_graph(graph, filepath='deps_clean.png'):
-    plt.figure(figsize=(14, 14))
-    pos = nx.kamada_kawai_layout(graph)  # Clearer than circular
-    nx.draw(graph, pos, with_labels=True, node_size=800, font_size=6,
-            arrows=True, arrowstyle='-|>', node_color='lightblue', edge_color='gray')
-    plt.axis('off')
+def plot_dependency_graph(imports, output="deps_clean.png"):
+    G = nx.DiGraph()
+    G.add_node("your_project")
+    for imp in sorted(imports):
+        G.add_edge("your_project", imp)
+
+    plt.figure(figsize=(10, 10))
+    pos = nx.spring_layout(G, k=0.5)
+    nx.draw(G, pos, with_labels=True, node_color='lightgreen', node_size=1000,
+            font_size=10, font_weight='bold', edge_color='gray', arrows=True)
+    plt.title("External Dependencies")
+    plt.axis("off")
     plt.tight_layout()
-    plt.savefig(filepath, dpi=300)
-    print(f"Clean dependency graph saved as {filepath}")
+    plt.savefig(output, dpi=300)
+    print(f"Saved cleaned dependency graph as {output}")
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--src-path', required=True)
+    parser.add_argument("--src-path", required=True)
     args = parser.parse_args()
 
-    imports = parse_imports(args.src_path)
-    graph = build_graph(imports)
-    plot_graph(graph)
+    imports = collect_imports(args.src_path)
+    plot_dependency_graph(imports)
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
