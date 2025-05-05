@@ -1,75 +1,59 @@
-import ast
 import os
+import ast
 import argparse
 import matplotlib.pyplot as plt
 import networkx as nx
-import sys
 
-STANDARD_LIBS = set(sys.builtin_module_names) | {
-    'os', 'sys', 'math', 're', 'json', 'time', 'typing', 'pathlib', 'itertools',
-    'functools', 'subprocess', 'datetime', 'collections', 'threading', 'argparse',
-    'logging', 'copy', 'enum', 'heapq', 'shutil', 'inspect', 'traceback', 'types'
-}
-
-def is_std_or_local(module):
-    return (
-        not module or
-        module.startswith('.') or
-        module in STANDARD_LIBS
-    )
-
-def get_external_imports_from_file(filepath):
-    with open(filepath, "r", encoding="utf-8") as f:
+def extract_top_level_imports(filepath):
+    with open(filepath, "r", encoding="utf-8") as file:
         try:
-            tree = ast.parse(f.read())
+            tree = ast.parse(file.read(), filename=filepath)
         except SyntaxError:
             return set()
+    
     imports = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
-                mod = alias.name.split('.')[0]
-                if not is_std_or_local(mod):
-                    imports.add(mod)
+                imports.add(alias.name.split('.')[0])
         elif isinstance(node, ast.ImportFrom):
             if node.module:
-                mod = node.module.split('.')[0]
-                if not is_std_or_local(mod):
-                    imports.add(mod)
+                imports.add(node.module.split('.')[0])
     return imports
 
-def collect_imports(path):
-    all_imports = set()
-    for root, _, files in os.walk(path):
+def scan_directory_for_imports(src_path):
+    dependency_map = {}
+    for root, _, files in os.walk(src_path):
         for file in files:
             if file.endswith(".py"):
                 full_path = os.path.join(root, file)
-                all_imports |= get_external_imports_from_file(full_path)
-    return all_imports
+                module_name = os.path.relpath(full_path, src_path).replace(os.sep, ".")[:-3]  # strip .py
+                imports = extract_top_level_imports(full_path)
+                dependency_map[module_name] = imports
+    return dependency_map
 
-def plot_dependency_graph(imports, output="deps_clean.png"):
+def plot_dependency_graph(dependency_map):
     G = nx.DiGraph()
-    G.add_node("your_project")
-    for imp in sorted(imports):
-        G.add_edge("your_project", imp)
 
-    pos = nx.circular_layout(G)  # NO scipy needed
-    plt.figure(figsize=(8, 8))
-    nx.draw(G, pos, with_labels=True, node_color='lightblue', node_size=1500,
-            font_size=10, font_weight='bold', edge_color='gray', arrows=True)
-    plt.title("External Dependencies")
-    plt.axis("off")
+    for module, imports in dependency_map.items():
+        for imp in imports:
+            G.add_edge(module, imp)
+
+    pos = nx.circular_layout(G)
+    plt.figure(figsize=(12, 12))
+    nx.draw(G, pos, with_labels=True, node_size=1000, font_size=8, arrows=True, edge_color='gray', node_color='lightblue')
+    plt.title("Minimal Python Import Graph")
+    plt.axis('off')
     plt.tight_layout()
-    plt.savefig(output, dpi=300)
-    print(f"Saved dependency graph as {output}")
+    plt.show()
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--src-path", required=True)
+    parser = argparse.ArgumentParser(description="Draw a minimal import dependency graph.")
+    parser.add_argument('--src-path', type=str, required=True, help='Path to your Python source code directory')
     args = parser.parse_args()
 
-    imports = collect_imports(args.src_path)
-    plot_dependency_graph(imports)
+    dep_map = scan_directory_for_imports(args.src_path)
+    plot_dependency_graph(dep_map)
 
 if __name__ == "__main__":
     main()
