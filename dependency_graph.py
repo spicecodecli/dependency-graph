@@ -43,12 +43,14 @@ def extract_dependencies(files, base_path):
 
 def plot_graph(graph, filepath='deps.png'):
     plt.figure(figsize=(12, 12))
-    pos = nx.spring_layout(graph, k=0.4, iterations=50)
-    nx.draw(graph, pos, with_labels=True, node_size=2000, font_size=8, arrows=True, arrowstyle='-|>')
+    pos = nx.circular_layout(graph)  # ✅ Pure Python layout
+    nx.draw(graph, pos, with_labels=True, node_size=2000, font_size=8,
+            arrows=True, arrowstyle='-|>', node_color='skyblue', edge_color='gray')
     plt.axis('off')
     plt.tight_layout()
     plt.savefig(filepath, dpi=300)
-    print(f"Dependency graph image saved to {filepath}")
+    print(f"Dependency graph saved as {filepath}")
+
 
 def main():
     parser = argparse.ArgumentParser(description='Generate dependency graph for a Python project (portable version)')
