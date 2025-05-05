@@ -5,7 +5,7 @@ dependency graph generator
 to setup:
 
 ```
-pip install networkx graphviz matplotlib
+pip install networkx matplotlib
 ```
 
 ---
