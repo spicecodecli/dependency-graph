@@ -1,67 +1,60 @@
-"""
-Dependency Graph Generator for the SpiceCode CLI Project
-Uses only pure Python libraries: networkx + matplotlib
-"""
-
+import ast
 import os
-import re
 import argparse
 import networkx as nx
 import matplotlib.pyplot as plt
+import sys
 
-def find_python_files(src_path):
-    py_files = []
-    for root, _, files in os.walk(src_path):
-        for f in files:
-            if f.endswith('.py') and not f.startswith('__'):
-                py_files.append(os.path.join(root, f))
-    return py_files
+# Hardcoded stdlib modules (simplified)
+STANDARD_LIBS = set(sys.builtin_module_names) | {
+    'os', 'sys', 'math', 're', 'json', 'time', 'typing', 'pathlib', 'itertools',
+    'functools', 'subprocess', 'datetime', 'collections', 'threading', 'argparse',
+    'logging', 'copy', 'enum', 'heapq', 'shutil', 'inspect', 'traceback', 'types'
+}
 
-IMPORT_RE = re.compile(r'^(?:from\s+([\w\.]+)\s+import|import\s+([\w\.]+))')
+def parse_imports(path):
+    imports = {}
+    for root, _, files in os.walk(path):
+        for filename in files:
+            if filename.endswith('.py'):
+                module = os.path.splitext(filename)[0]
+                with open(os.path.join(root, filename), 'r', encoding='utf-8') as f:
+                    try:
+                        tree = ast.parse(f.read(), filename=filename)
+                        names = {n.name.split('.')[0] for n in ast.walk(tree) if isinstance(n, ast.Import)}
+                        froms = {n.module.split('.')[0] for n in ast.walk(tree)
+                                 if isinstance(n, ast.ImportFrom) and n.module}
+                        all_imports = names | froms
+                        filtered = [imp for imp in all_imports if imp and imp not in STANDARD_LIBS]
+                        imports[module] = filtered
+                    except SyntaxError:
+                        continue
+    return imports
 
-def extract_dependencies(files, base_path):
-    graph = nx.DiGraph()
-    module_map = {}
+def build_graph(imports):
+    G = nx.DiGraph()
+    for mod, deps in imports.items():
+        for dep in deps:
+            G.add_edge(mod, dep)
+    return G
 
-    for f in files:
-        rel = os.path.relpath(f, base_path)
-        mod = rel[:-3].replace(os.path.sep, '.')
-        module_map[f] = mod
-        graph.add_node(mod)
-
-    for f in files:
-        src = open(f, 'r', encoding='utf-8').read().splitlines()
-        src_mod = module_map[f]
-        for line in src:
-            m = IMPORT_RE.match(line.strip())
-            if m:
-                imported = m.group(1) or m.group(2)
-                for path, mod in module_map.items():
-                    if imported == mod or imported.startswith(mod + '.'):
-                        graph.add_edge(src_mod, mod)
-    return graph
-
-def plot_graph(graph, filepath='deps.png'):
-    plt.figure(figsize=(12, 12))
-    pos = nx.circular_layout(graph)  # ✅ Pure Python layout
-    nx.draw(graph, pos, with_labels=True, node_size=2000, font_size=8,
-            arrows=True, arrowstyle='-|>', node_color='skyblue', edge_color='gray')
+def plot_graph(graph, filepath='deps_clean.png'):
+    plt.figure(figsize=(14, 14))
+    pos = nx.kamada_kawai_layout(graph)  # Clearer than circular
+    nx.draw(graph, pos, with_labels=True, node_size=800, font_size=6,
+            arrows=True, arrowstyle='-|>', node_color='lightblue', edge_color='gray')
     plt.axis('off')
     plt.tight_layout()
     plt.savefig(filepath, dpi=300)
-    print(f"Dependency graph saved as {filepath}")
-
+    print(f"Clean dependency graph saved as {filepath}")
 
 def main():
-    parser = argparse.ArgumentParser(description='Generate dependency graph for a Python project (portable version)')
-    parser.add_argument('--src-path', required=True, help='Path to source code root')
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--src-path', required=True)
     args = parser.parse_args()
 
-    files = find_python_files(args.src_path)
-    if not files:
-        print(f"No Python files found under {args.src_path}")
-        return
-    graph = extract_dependencies(files, args.src_path)
+    imports = parse_imports(args.src_path)
+    graph = build_graph(imports)
     plot_graph(graph)
 
 if __name__ == '__main__':
