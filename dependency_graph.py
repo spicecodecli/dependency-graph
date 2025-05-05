@@ -53,15 +53,15 @@ def plot_dependency_graph(imports, output="deps_clean.png"):
     for imp in sorted(imports):
         G.add_edge("your_project", imp)
 
-    plt.figure(figsize=(10, 10))
-    pos = nx.spring_layout(G, k=0.5)
-    nx.draw(G, pos, with_labels=True, node_color='lightgreen', node_size=1000,
+    pos = nx.circular_layout(G)  # NO scipy needed
+    plt.figure(figsize=(8, 8))
+    nx.draw(G, pos, with_labels=True, node_color='lightblue', node_size=1500,
             font_size=10, font_weight='bold', edge_color='gray', arrows=True)
     plt.title("External Dependencies")
     plt.axis("off")
     plt.tight_layout()
     plt.savefig(output, dpi=300)
-    print(f"Saved cleaned dependency graph as {output}")
+    print(f"Saved dependency graph as {output}")
 
 def main():
     parser = argparse.ArgumentParser()
